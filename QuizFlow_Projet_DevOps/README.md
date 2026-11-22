@@ -144,3 +144,7 @@ QuizFlow_Projet_DevOps/
 ```
 
 **Note technique :** cette version utilise HTML/CSS/JavaScript natifs au lieu de React, afin de réduire au maximum la configuration et les risques. Le sujet autorise une application Web au choix et ne demande pas React. Le projet est une vraie application statique fonctionnelle, pas une maquette.
+## Travail collaboratif
+
+Projet DevOps réalisé en équipe par Maram, Selma, Meriem et Hanine.
+Application : QuizFlow — Quiz interactif.
