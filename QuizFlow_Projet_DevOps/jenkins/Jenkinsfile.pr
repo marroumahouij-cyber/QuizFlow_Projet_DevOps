@@ -1,13 +1,13 @@
-// QuizFlow - Pipeline PR, Jenkins Windows (LocalSystem).
-// Ce job en mode "Pipeline script from SCM" lit actuellement dev :
-// c'est un test manuel sur dev, pas encore un vrai declencheur PR.
+// QuizFlow CI - Windows Jenkins (LocalSystem) + Docker Desktop
+// Script Path: QuizFlow_Projet_DevOps/jenkins/Jenkinsfile.pr
+// A first manual build checks branch dev. PR automation is configured separately.
 pipeline {
     agent any
 
     environment {
+        // Your Docker Desktop installation under Windows account ASUS.
         PATH = "C:\\Users\\ASUS\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;${env.PATH}"
-        DOCKER_CONFIG = 'C:\\Users\\ASUS\\.docker'
-        COMPOSE_PROJECT_NAME = 'quizflow-ci'
+        COMPOSE_EXE = 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\DockerDesktop\\resources\\cli-plugins\\docker-compose.exe'
     }
 
     options {
@@ -30,22 +30,21 @@ pipeline {
                     bat 'node --version'
                     bat 'npm.cmd --version'
                     bat 'docker --version'
+
+                    // Do not search for Compose dynamically: use the confirmed full path.
+                    bat 'if not exist "%COMPOSE_EXE%" (echo ERROR: docker-compose.exe introuvable & exit /b 1)'
+                    bat '"%COMPOSE_EXE%" version'
+
+                    // Test Docker Engine access from the actual Jenkins service account.
                     script {
-                        env.COMPOSE_EXE = powershell(returnStdout: true, script: '''
-                            $root = 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\DockerDesktop'
-                            $file = Get-ChildItem -LiteralPath $root -Recurse -File -Filter docker-compose.exe -ErrorAction SilentlyContinue |
-                                Select-Object -First 1
-                            if (-not $file) {
-                                throw 'docker-compose.exe introuvable sous DockerDesktop : verifier installation et chemin'
-                            }
-                            [Console]::WriteLine($file.FullName)
-                        ''').trim()
-                        echo "Compose executable : ${env.COMPOSE_EXE}"
+                        int result = bat(returnStatus: true,
+                            script: 'docker info --format "{{.ServerVersion}}"')
+                        if (result != 0) {
+                            echo 'Docker Engine: trying the Docker Desktop Linux named pipe.'
+                            env.DOCKER_HOST = 'npipe:////./pipe/dockerDesktopLinuxEngine'
+                            bat 'docker info --format "{{.ServerVersion}}"'
+                        }
                     }
-                    bat(script: "\"${env.COMPOSE_EXE}\" version")
-                    // Controler l'acces REEL au moteur avant de construire les images.
-                    bat 'docker info --format "Docker Engine: {{.ServerVersion}}"'
-                    bat(script: "\"${env.COMPOSE_EXE}\" config --quiet")
                 }
             }
         }
@@ -64,8 +63,9 @@ pipeline {
         stage('Run (Docker)') {
             steps {
                 dir('QuizFlow_Projet_DevOps') {
-                    bat(script: "\"${env.COMPOSE_EXE}\" up -d --build")
-                    bat(script: "\"${env.COMPOSE_EXE}\" ps > artifacts/docker-status.txt")
+                    // Dedicated Compose project; do not touch other user containers.
+                    bat '"%COMPOSE_EXE%" -p quizflow-ci up -d --build'
+                    bat '"%COMPOSE_EXE%" -p quizflow-ci ps > artifacts/docker-status.txt'
                     bat 'type artifacts\\docker-status.txt'
                 }
             }
@@ -76,9 +76,9 @@ pipeline {
                 dir('QuizFlow_Projet_DevOps') {
                     bat 'npm.cmd run smoke > artifacts/smoke-build.log 2>&1'
                     bat 'type artifacts\\smoke-build.log'
-                    bat(script: "\"${env.COMPOSE_EXE}\" exec -T web wget -q -O - http://127.0.0.1/health > artifacts/smoke-http.txt")
+                    bat '"%COMPOSE_EXE%" -p quizflow-ci exec -T web wget -q -O - http://127.0.0.1/health > artifacts/smoke-http.txt'
                     bat 'findstr /C:"ok" artifacts\\smoke-http.txt'
-                    bat(script: "\"${env.COMPOSE_EXE}\" exec -T web wget -q -O - http://127.0.0.1/ > artifacts/smoke-page.html")
+                    bat '"%COMPOSE_EXE%" -p quizflow-ci exec -T web wget -q -O - http://127.0.0.1/ > artifacts/smoke-page.html'
                     bat 'findstr /C:"QuizFlow" artifacts\\smoke-page.html'
                 }
             }
@@ -88,7 +88,7 @@ pipeline {
             steps {
                 dir('QuizFlow_Projet_DevOps') {
                     bat 'node scripts/prepare-artifacts.js'
-                    bat 'docker image ls quizflow:local > artifacts/docker-images.txt'
+                    bat 'docker image ls quizflow > artifacts/docker-images.txt'
                     archiveArtifacts artifacts: 'artifacts/**/*,dist/**/*', allowEmptyArchive: true
                 }
             }
@@ -99,16 +99,18 @@ pipeline {
         always {
             dir('QuizFlow_Projet_DevOps') {
                 bat(returnStatus: true, script: 'if not exist artifacts mkdir artifacts')
-                script {
-                    if (env.COMPOSE_EXE?.trim()) {
-                        bat(returnStatus: true, script: "\"${env.COMPOSE_EXE}\" logs --no-color > artifacts/container.log 2>&1")
-                        bat(returnStatus: true, script: "\"${env.COMPOSE_EXE}\" down --remove-orphans")
-                    }
-                }
+                bat(returnStatus: true,
+                    script: 'if exist "%COMPOSE_EXE%" "%COMPOSE_EXE%" -p quizflow-ci logs --no-color > artifacts/container.log 2>&1')
                 archiveArtifacts artifacts: 'artifacts/**/*,dist/**/*', allowEmptyArchive: true
+                bat(returnStatus: true,
+                    script: 'if exist "%COMPOSE_EXE%" "%COMPOSE_EXE%" -p quizflow-ci down --remove-orphans')
             }
         }
-        success { echo 'PASSED - QuizFlow PR (verification manuelle de dev)' }
-        failure { echo 'FAILED - consulter la console et les artefacts' }
+        success {
+            echo 'PASSED - QuizFlow CI (manual test of dev branch)'
+        }
+        failure {
+            echo 'FAILED - See Setup / Docker Engine / archived logs for details.'
+        }
     }
 }
