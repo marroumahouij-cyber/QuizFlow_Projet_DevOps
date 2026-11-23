@@ -21,7 +21,6 @@ pipeline {
         bat 'type artifacts\\build.log'
       }
     }
-    
     stage('Run (Docker)') {
       steps {
         bat 'docker compose down --remove-orphans'
@@ -41,7 +40,7 @@ pipeline {
     stage('Archive Artifacts') {
       steps {
         bat 'node scripts/prepare-artifacts.js'
-        bat 'docker image ls quizflow > artifacts\docker-images.txt'
+        bat 'docker image ls quizflow > artifacts\\docker-images.txt'
         archiveArtifacts artifacts: 'artifacts/**/*,dist/**/*', allowEmptyArchive: true
       }
     }
