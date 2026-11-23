@@ -2,6 +2,10 @@
 pipeline {
     agent any
 
+    environment {
+        PATH+DOCKER = 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin'
+    }
+
     options {
         skipDefaultCheckout(true)
         timestamps()
